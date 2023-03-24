@@ -6,44 +6,57 @@
     </div>
     <router-view/> -->
 		<el-dialog title="设置(双击数据可进行修改)" :visible.sync="dialogFormVisible" :close-on-click-modal="false" width="80%">
-			<div class="setUpMain">
-				<el-table
-						:data="tableData"
-						border
-						stripe
-						style="width: 100%"
-						@cell-dblclick="popUpOpen"
-						max-height="500">
-					<el-table-column
-							fixed
-							prop="name"
-							label="名称"
-							width="130">
-					</el-table-column>
-					<el-table-column
-							fixed
-							prop="key"
-							label="程序key"
-							width="130">
-					</el-table-column>
-					<el-table-column
-							prop="url"
-							label="图标地址"
+
+			<el-tabs type="border-card" @tab-click="getFolderImgList">
+				<el-tab-pane label="桌面配置" style="height: 500px;">
+					<div class="setUpMain">
+						<el-table
+								:data="tableData"
+								border
+								stripe
+								style="width: 100%"
+								@cell-dblclick="popUpOpen"
+								max-height="500">
+							<el-table-column
+									fixed
+									prop="name"
+									label="名称"
+									width="130">
+							</el-table-column>
+							<el-table-column
+									fixed
+									prop="key"
+									label="程序key"
+									width="130">
+							</el-table-column>
+							<el-table-column
+									prop="url"
+									label="图标地址"
 							>
-					</el-table-column>
-					<el-table-column
-							prop="path"
-							label="路径"
+							</el-table-column>
+							<el-table-column
+									prop="path"
+									label="路径"
 							>
-					</el-table-column>
-				</el-table>
-			</div>
+							</el-table-column>
+						</el-table>
+					</div>
+
+				</el-tab-pane>
+
+				<el-tab-pane label="背景设置" style="height: 500px;overflow-y: auto;">
+					<div class="imgBgBox">
+						<img :src="item" style="cursor: pointer;margin-bottom: 20px;" width="200" height="200" @click="clickBgImg(item)" v-for="(item,index) in imgList" :key="index" alt="">
+					</div>
+				</el-tab-pane>
+
+			</el-tabs>
 			<div slot="footer" class="dialog-footer">
 				<el-button type="primary" @click="clickDesktop">返回windows桌面</el-button>
-<!--				<el-button type="primary" @click="formConfig,dialogFormVisible = false">确 定</el-button>-->
+				<!--				<el-button type="primary" @click="formConfig,dialogFormVisible = false">确 定</el-button>-->
 			</div>
 		</el-dialog>
-		<div class="main">
+		<div class="main" ref="mainBgImg">
 			<div class="setUp" @click="setUp" ref="refSetUp"></div>
 			<div class="mainBox">
 				<div class="mainItem" v-for="(item,index) in this.tableData" @click="clickWebsocket(item)">
@@ -106,34 +119,17 @@
 			return {
 				date:{},
 				list: [],
-				url:process.env.NODE_ENV === "development"?'./public':window.process.resourcesPath,
+				imgList: [],//获得的全部img图片
+				implement:true,//节流判断值
+				url:process.env.NODE_ENV === "development"?'./public':window.process.resourcesPath,//判断线上线下
+				igmUrl:process.env.NODE_ENV === "development"?'./img/':'./img/',//判断线上线下背景图片文件夹
 				loading:true,
-				loadingText:'启动后台服务中',
+				loadingText:'正在启动后台服务',
 				windowsMenuList:['关机','重启'],//windows图标的功能菜单
-				clickWindows:false,
+				clickWindows:false,//左下角图标动画
 				clickWindowsMenu:false,
 				backgroundColorList:['#70BAFC','#FED16F','#28D7C3','#A1E59D','#FED16F','#BC80E5','#10D1BB','#C28DE8','#7FC1FC'],
-				object:{
-					"IntelliJ IDEA":{
-						"name": "IntelliJ IDEA",
-						"url":"./img/2.png",
-						"path":""
-					},
-					"Vivaldi":{
-						"name": "Vivaldi",
-						"url":"./img/1.png",
-						"path":""
-					}
-				},
-				exeList:{
-					"IntelliJ IDEA":{
-						"IntelliJ IDEA14": "native@0x40096"
-					},
-					"Vivaldi":[{
-						"Vivaldi109": "native@0x2c0216",
-						"Vivaldi21": "native@0x5071e"
-					}]
-				},
+				errorList:[],//统计连接断开的次数
 				setUpIndex:0,//点击设置的次数 累计一定次数打开设置框
 
 				dialogFormVisible: false,
@@ -208,13 +204,16 @@
 		},
 		mounted() {
 			// console.log(`//${location.host}/WebSocket/WebSocket`)
-			// const fs = window.require('fs')
-			// console.log(fs,'222222222222')
-
 			setInterval(()=>{//获取当前时间和日期
 				this.date = this.getDate()
 			},1000)
-
+			console.log(localStorage.getItem('bgImgPath'),'localStorage.getItem(\'bgImgPath\')')
+			if(localStorage.getItem('bgImgPath')!=null){
+				this.clickBgImg(localStorage.getItem('bgImgPath'),1)
+			}else{
+				this.$refs.mainBgImg.style.background='url(./img/默认背景图.jpeg)';
+				this.$refs.mainBgImg.style.backgroundSize='100% 100%';
+			}
 			this.initWebSocket();
 			// 点击其他区域关闭自定义div
 			document.addEventListener('click', (e) => {
@@ -233,14 +232,12 @@
 					console.log(e)
 				}
 			});
-			// if(localStorage.getItem('tableData')!=null){
-			// 	this.tableData = JSON.parse(localStorage.getItem('tableData'))
-			// }
 		},
 		sockets: {
 			// 连接成功
 			onopen() {
 				this.loading = false
+				this.errorList = []
 				axios.post('http://localhost:8089/switch/getLocal', {})
 						.then((res) => {
 							this.tableData = res.data.params
@@ -255,22 +252,19 @@
 				if(JSON.parse(e.data).code==200){
 					let list = JSON.parse(e.data).params
 					this.list = list
-					// for(let i=0; i<this.tableData.length; i++){
-					// 	for (let key in object) {//将应用程序列表的数据 放入到底部加任务栏所需的数组中 以便点击时获取
-					// 		if(this.tableData[i].key==key){
-					// 			// console.log(this.tableData[i])
-					// 			this.tableData[i][key]=object[key]
-					// 			this.list.push(this.tableData[i])
-					// 		}
-					// 	}
-					// }
-					// console.log(this.list,'list')
 				}
 			},
 			// 连接报错
 			onerror() {
 				this.loading = true
 				console.log('连接出错')
+				this.errorList.push('连接出错')
+				this.loadingText = '服务器连接失败,正在尝试重连'+this.errorList.length+'/5次'
+				if(this.errorList.length>=6){
+					this.loadingText = '服务器未响应,正在尝试重启后台服务'
+					this.init()
+					this.initWebSocket()
+				}
 			},
 			// 关闭连接
 			onclose() {
@@ -281,15 +275,128 @@
 		destroyed() {
 			// 销毁websocket
 			this.$disconnect();
+			// this.getFolderImgList()
 		},
 		created() {
 			this.init()
+			this.base()
 		},
 		methods: {
+			clickBgImg(item,type){
+				this.$refs.mainBgImg.style.background='url('+item+')';
+				this.$refs.mainBgImg.style.backgroundSize='100% 100%';
+				if(type!=1){
+					this.$message({
+						message: '切换成功',
+						type: 'success'
+					});
+					localStorage.setItem('bgImgPath',item)
+				}
+			},
+			readFileList(path, filesList) {
+				const fs = window.require('fs');
+				let that = this
+				let files = fs.readdirSync(path);
+				files.forEach(function (itm, index) {
+					let stat = fs.statSync(path + itm);
+					if (stat.isDirectory()) {
+						//递归读取文件
+						that.readFileList(path + itm + "/", filesList)
+					} else {
+						let obj = {};//定义一个对象存放文件的路径和名字
+						obj.path = path;//路径
+						obj.filename = itm//名字
+						filesList.push(obj);
+					}
+				})
+			},
+			getImageType(str){
+				console.log(str,'str')
+				var reg = /\.(png|jpg|gif|jpeg|webp)$/;
+				return str.match(reg)[1];
+			},
+			base(){
+				let that = this
+				const image = require("imageinfo"); //引用imageinfo模块
+				const fs = window.require('fs');
+				let getFiles = {
+					//获取文件夹下的所有文件
+					getFileList: function (path) {
+						let filesList = [];
+						that.readFileList(path, filesList);
+						console.log(filesList,'filesList')
+						return filesList;
+					},
+					//获取文件夹下的所有图片
+					getImageFiles: function (path) {
+						let imageList = [];
+						getFiles.getFileList(path).forEach((item) => {
+							let ms = image(fs.readFileSync(item.path + item.filename));
+							ms.mimeType && (imageList.push('./public/img2/' + item.filename))
+						});
+						return imageList;
+					}
+				};
+				//获取文件夹下的所有图片
+				let srclist=getFiles.getImageFiles(process.env.NODE_ENV === "development"?'./public/img2/':'./resources/app.asar/img/');
+				let srcNewList=[];
+				that.imgList =  srclist
+				let srcUrl = ''
+				// srclist.forEach(function (item, index){
+				// 	if(item.indexOf('jpg')!=-1||item.indexOf('png')!=-1){
+				// 		console.log(item.path+item.filename,'item.path+item.filename')
+				// 		const buffer = new Buffer(item.path+item.filename, 'binary');
+				// 		srcUrl = 'data: image/'+ this.getImageType(item.filename) +';base64,' + buffer.toString('base64');
+				// 		console.log(srcUrl,'******')
+				// 		srcNewList.push(item)
+				// 	}
+				// })
+				// that.imgList =  srcNewList
+				fs.readFile('C:\\Users\\Administrator\\Desktop\\cloudDesktop\\vue-electron\\public\\img2\\','binary',function(err,data){
+					if(err){
+						console.log(err,'111111')
+					}else{
+						console.log('数据读取成功');
+					}
+				});
+			},
+			getFolderImgList(){
+				let that = this
+				const image = require("imageinfo"); //引用imageinfo模块
+				const fs = window.require('fs');
+				let getFiles = {
+					//获取文件夹下的所有文件
+					getFileList: function (path) {
+						let filesList = [];
+						that.readFileList(path, filesList);
+						console.log(filesList,'filesList')
+						return filesList;
+					},
+					//获取文件夹下的所有图片
+					getImageFiles: function (path) {
+						let imageList = [];
+						getFiles.getFileList(path).forEach((item) => {
+							let ms = image(fs.readFileSync(item.path + item.filename));
+							ms.mimeType && (imageList.push(that.igmUrl + item.filename))
+						});
+						return imageList;
+					}
+				};
+				//获取文件夹下的所有图片
+				let srclist=getFiles.getImageFiles(process.env.NODE_ENV === "development"?'./public/img/':'./resources/app.asar/img/');
+				let srcNewList=[];
+				that.imgList =  srclist
+				srclist.forEach(function (item, index){
+					if(item.indexOf('jpg')!=-1||item.indexOf('png')!=-1){
+						srcNewList.push(item)
+					}
+				})
+				that.imgList =  srcNewList
+			},
 			init(){
 				// console.log(window.process.resourcesPath);
-				let child_process = window.require("child_process")
 				let that = this
+				let child_process = window.require("child_process")
 				Promise.resolve().then(function() {
 					child_process.execFile("1.bat",null,{cwd:that.url},function(error,stdout,stderr){
 						if(error !==null){
@@ -299,55 +406,48 @@
 						}
 					})
 				}).then(function() {
-					child_process.execFile("stop.bat",null,{cwd:that.url},function(error,stdout,stderr){
+					child_process.execFile("run.bat",null,{cwd:that.url},function(error,stdout,stderr){
 						if(error !==null){
-							console.log("exec error"+error)
+							console.log("exec error3"+error)
 						}else{
-							console.log("成功2")
+							console.log("成功3")
 						}
 					})
-				}).then(function() {
-					setTimeout(()=>{
-						child_process.execFile("run.bat",null,{cwd:that.url},function(error,stdout,stderr){
-							if(error !==null){
-								console.log("exec error3"+error)
-							}else{
-								console.log("成功3")
-							}
-						})
-					},500)
-				});
+				})
 			},
+      close(){
+        this.loading=true
+        this.loadingText='正在重启windows任务栏服务'
+        let that = this
+        let child_process = window.require("child_process")
+        child_process.execFile("2.bat",null,{cwd:this.url},function(error,stdout,stderr){
+          if(error !==null){
+            console.log("exec error"+error)
+          }else{
+
+          }
+        })
+        setTimeout(()=>{
+          this.loadingText = '正在结束当前进程'
+        },800)
+        setTimeout(()=>{
+          that.viewProcessMessage('electron.exe',function (msg) {
+            try {
+              //关闭匹配的进程
+              window.process.kill(msg)
+            }catch (e) {
+
+            }
+          })
+        },1800)
+      },
 			clickDesktop(){
 				this.$confirm('是否确认退出当前程序并返回windows桌面?', '提示', {
 					confirmButtonText: '确定',
 					cancelButtonText: '取消',
 					type: 'warning'
 				}).then(() => {
-					this.loading=true
-					this.loadingText='正在重启windows任务栏服务'
-					let that = this
-					let child_process = window.require("child_process")
-					child_process.execFile("2.bat",null,{cwd:this.url},function(error,stdout,stderr){
-						if(error !==null){
-							console.log("exec error"+error)
-						}else{
-
-						}
-					})
-					setTimeout(()=>{
-						this.loadingText = '正在结束当前进程'
-					},800)
-					setTimeout(()=>{
-						that.viewProcessMessage('electron.exe',function (msg) {
-							try {
-								//关闭匹配的进程
-								window.process.kill(msg)
-							}catch (e) {
-
-							}
-						})
-					},1800)
+          this.close()
 				}).catch(() => {
 					// this.$message({
 					// 	type: 'info',
@@ -453,19 +553,27 @@
 				if(item.key=='微信'||item.name=='微信'){
 					const childProcess = window.require('child_process');
 					const exec = childProcess.exec;
-					var path = "start "+item.path;
+					let path = "start "+item.path;
 					exec(path,{
 						maxBuffer: 1024 * 2000
 					}, function(err, stdout, stderr) {
 					});
-				}else{
-					this.$socket.sendObj({
-						code: '35',
-						params: {
-							"name":item.name
-						},
-						message:"打开应用"
-					});
+				}else if(item.key=='close'||item.name=='退出桌面'){
+				  this.close()
+        		}else{
+					if(this.implement){
+						this.$socket.sendObj({
+							code: '35',
+							params: {
+								"name":item.name
+							},
+							message:"打开应用"
+						});
+						this.implement = false
+						setTimeout(()=>{
+							this.implement = true
+						},300)
+					}
 					//code 35打开  42关闭  74切换
 					//打开报错  507   切换  508   关闭  509
 				}
@@ -495,7 +603,7 @@
 				if(item.local.key=='微信'||item.local.name=='微信'){
 					const childProcess = window.require('child_process');
 					const exec = childProcess.exec;
-					var path = "start "+item.local.path;
+					let path = "start "+item.local.path;
 					exec(path,{
 						maxBuffer: 1024 * 2000
 					}, function(err, stdout, stderr) {
@@ -511,7 +619,6 @@
 					//code 35打开  42关闭  74切换
 					//打开报错  507   切换  508   关闭  509
 				}
-
 				// this.$socket.sendObj({
 				// 	code: '74',
 				// 	params: {
@@ -626,7 +733,7 @@
 	}
 	.setUpMain{
 		width: 100%;
-		height: 480px;
+		height: 500px;
 	}
 	.dialog-footer{
 		display: flex;
@@ -646,6 +753,15 @@
 		width: 100%;
 		display: flex;
 		justify-content: left;
+	}
+	.imgBgBox{
+		width: 100%;
+		height: 100%;
+		display: flex;
+		flex-direction: row;
+		justify-content: space-evenly;
+		flex-wrap: wrap;
+		align-content: stretch;
 	}
 	.itemMainBox{
 		display: flex;
@@ -753,7 +869,7 @@
 		cursor: pointer;
 		box-shadow: darkgrey 0px 0px 15px 0px;
 		transition: all 0.3s;
-		z-index: 99;
+		z-index: 999999;
 		opacity: 0;
 	}
 	.menuMainHide{
